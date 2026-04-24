@@ -38,6 +38,7 @@ def _extract(video_id: str) -> dict:
         "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "noplaylist": True,
         "skip_download": True,
+        "cookiefile": "cookies.txt",
     }
     url = f"https://www.youtube.com/watch?v={video_id}"
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
