@@ -21,16 +21,12 @@ def _extract(video_id: str) -> dict:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        # ① mp4合体済みを最優先、なければ音声付き最良フォーマット、最後の手段はany
-        "format": (
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
-            "/best[acodec!=none]/best"
-        ),
+        # 修正：より柔軟なフォーマット選択に変更
+        # mp4を優先しつつ、だめなら何でもいいから「映像+音声」が揃っているものを探す
+        "format": "best[ext=mp4]/best", 
         "noplaylist": True,
         "skip_download": True,
         "cookiefile": "cookies.txt",
-        # ② merge_output_format は skip_download 時は不要だが念のため
-        "merge_output_format": "mp4",
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
