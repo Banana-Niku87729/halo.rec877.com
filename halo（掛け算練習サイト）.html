@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Halo</title>
+  <link rel="icon" href="https://get.rec877.com/get/barpc/halo.ico" type="image/png">
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #0f0f1a;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .card {
+      background: #1b1b2b;
+      padding: 22px;
+      border-radius: 16px;
+      width: 320px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    h1 { margin-bottom: 10px; }
+
+    .question { font-size: 24px; margin: 15px 0; }
+
+    .combo { font-size: 14px; opacity: 0.8; }
+    .timer { font-size: 14px; margin-top: 5px; }
+
+    select, input {
+      width: 120px;
+      font-size: 16px;
+      text-align: center;
+      padding: 6px;
+      border-radius: 8px;
+      border: none;
+      outline: none;
+      margin-top: 6px;
+    }
+
+    .btn {
+      margin-top: 10px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.2s;
+      margin: 6px 4px 0 4px;
+    }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .primary { background: #6c5ce7; color: white; }
+    .primary:hover { background: #7d6df0; }
+
+    .secondary { background: #2d2d44; color: white; }
+    .secondary:hover { background: #3a3a5a; }
+
+    .result { margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Halo</h1>
+
+    <div class="combo" id="combo">コンボ: 0</div>
+    <div class="timer" id="timer">残り: 60秒</div>
+
+    <select id="level">
+      <option value="1">Lv1 (1桁)</option>
+      <option value="2">Lv2 (2桁)</option>
+      <option value="3">Lv3 (3桁)</option>
+    </select>
+
+    <div class="question" id="q"></div>
+
+    <input id="answer" type="number" placeholder="答え" />
+
+    <div>
+      <button class="btn primary" onclick="check()">回答</button>
+      <button class="btn secondary" id="nextBtn" onclick="nextQ()" disabled>次へ</button>
+    </div>
+
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    let a, b;
+    let combo = 0;
+    let answered = false;
+    let time = 60;
+    let timerInterval;
+
+    const answerEl = document.getElementById("answer");
+    const nextBtn = document.getElementById("nextBtn");
+    const comboEl = document.getElementById("combo");
+    const timerEl = document.getElementById("timer");
+    const levelEl = document.getElementById("level");
+
+    function updateCombo() {
+      comboEl.innerText = `コンボ: ${combo}`;
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      time = 60;
+      timerEl.innerText = `残り: ${time}秒`;
+
+      timerInterval = setInterval(() => {
+        time--;
+        timerEl.innerText = `残り: ${time}秒`;
+
+        if (time <= 0) {
+          clearInterval(timerInterval);
+          combo = 0;
+          updateCombo();
+          document.getElementById("result").innerText = "時間切れ！";
+          nextBtn.disabled = false;
+          answered = true;
+        }
+      }, 1000);
+    }
+
+    function getRandomNum(digits) {
+      const min = Math.pow(10, digits - 1);
+      const max = Math.pow(10, digits) - 1;
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function nextQ() {
+      const level = Number(levelEl.value);
+
+      if (level === 1) {
+        a = Math.floor(Math.random() * 9) + 1;
+        b = Math.floor(Math.random() * 9) + 1;
+      } else {
+        a = getRandomNum(level);
+        b = getRandomNum(level);
+      }
+
+      document.getElementById("q").innerText = `${a} × ${b} = ?`;
+      document.getElementById("result").innerText = "";
+      answerEl.value = "";
+      nextBtn.disabled = true;
+      answered = false;
+      answerEl.focus();
+
+      startTimer();
+    }
+
+    function check() {
+      if (answerEl.value === "" || answered) return;
+
+      const ans = Number(answerEl.value);
+      answered = true;
+      clearInterval(timerInterval);
+
+      if (ans === a * b) {
+        combo++;
+        document.getElementById("result").innerText = "正解！🔥";
+      } else {
+        combo = 0;
+        document.getElementById("result").innerText = `違う！正解は ${a * b}`;
+      }
+
+      updateCombo();
+      nextBtn.disabled = false;
+    }
+
+    answerEl.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        if (!answered) {
+          check();
+        } else if (!nextBtn.disabled) {
+          nextQ();
+        }
+      }
+    });
+
+    nextQ();
+    updateCombo();
+  </script>
+</body>
+</html>
+
