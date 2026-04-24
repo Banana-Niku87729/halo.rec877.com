@@ -35,29 +35,29 @@ def _extract(video_id: str) -> dict:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        # フォーマット指定を緩める：
+        # 「1080p以下のmp4」があればベストだが、なければ「再生可能な最高画質」を自動選択
+        "format": "best[ext=mp4]/best", 
         "noplaylist": True,
         "skip_download": True,
         "cookiefile": "cookies.txt",
-        "extractor_args": {
-              "youtube": {
-                  "player_client": ["ios"],
-              }
-          },
-          # プロキシが使えない場合、これを入れると通ることがあります
-          "http_headers": {
-              "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
-          }
+        # 403 Forbidden対策として、User-Agentなどを追加
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
     }
     url = f"https://www.youtube.com/watch?v={video_id}"
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
-    # 結合フォーマットの場合は manifest_url、単体は url
-    stream_url = info.get("url") or info.get("manifest_url")
-    if not stream_url and info.get("requested_formats"):
-        # 最初のビデオストリームを返す（ブラウザが対応できるもの）
-        stream_url = info["requested_formats"][0].get("url")
+    # ストリームURLの取得ロジック
+    stream_url = info.get("url")
+    if not stream_url and "formats" in info:
+        # urlが直接ない場合、formatsの中から一番条件に近いものを探す
+        stream_url = info["formats"][-1]["url"]
 
     if not stream_url:
         raise ValueError("再生可能なURLが見つかりませんでした")
