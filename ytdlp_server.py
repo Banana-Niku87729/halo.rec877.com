@@ -96,3 +96,29 @@ async def stream(id: str = Query(..., description="YouTube video ID")):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+@app.get("/debug")
+async def debug(id: str = Query(...)):
+    """利用可能なフォーマット一覧を返す（デバッグ用）"""
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "cookiefile": "cookies.txt",
+    }
+    url = f"https://www.youtube.com/watch?v={id}"
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    
+    formats = [
+        {
+            "format_id": f.get("format_id"),
+            "ext": f.get("ext"),
+            "vcodec": f.get("vcodec"),
+            "acodec": f.get("acodec"),
+            "height": f.get("height"),
+            "has_url": bool(f.get("url")),
+        }
+        for f in info.get("formats", [])
+    ]
+    return {"title": info.get("title"), "formats": formats}
