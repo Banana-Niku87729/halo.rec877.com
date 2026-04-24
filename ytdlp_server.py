@@ -186,3 +186,14 @@ async def formats(id: str):
         for fmt in info.get("formats", [])
     ]
     return {"title": info.get("title"), "formats": formats}
+
+@app.get("/debug")
+async def debug():
+    cookies_exists = COOKIES_PATH.exists()
+    cookies_size = COOKIES_PATH.stat().st_size if cookies_exists else 0
+    env_set = bool(os.environ.get("YOUTUBE_COOKIES", ""))
+    return {
+        "cookies_file_exists": cookies_exists,
+        "cookies_file_size_bytes": cookies_size,
+        "env_YOUTUBE_COOKIES_set": env_set,
+    }
