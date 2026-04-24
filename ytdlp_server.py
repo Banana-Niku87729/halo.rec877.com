@@ -1,8 +1,5 @@
 """
 Halo – yt-dlp Backend
-======================
-Cloudflare Workers から呼ばれる軽量バックエンドサーバー。
-yt-dlp を使って YouTube 動画の直接 URL を返す。
 """
 
 import asyncio
@@ -21,34 +18,57 @@ app.add_middleware(
 )
 
 def _extract(video_id: str) -> dict:
-    """yt-dlp で動画URLを取得（同期）"""
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "best[ext=mp4]/best", 
+        # ① mp4合体済みを最優先、なければ音声付き最良フォーマット、最後の手段はany
+        "format": (
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
+            "/best[acodec!=none]/best"
+        ),
         "noplaylist": True,
         "skip_download": True,
         "cookiefile": "cookies.txt",
+        # ② merge_output_format は skip_download 時は不要だが念のため
+        "merge_output_format": "mp4",
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.9",
-        }
+        },
     }
     url = f"https://www.youtube.com/watch?v={video_id}"
-    
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
-    # 1. 直接のURL、またはマニフェストURLを優先
+    # ── URL解決の優先順位 ──────────────────────────────
+    # 1. トップレベルの url / manifest_url（merged or single stream）
     stream_url = info.get("url") or info.get("manifest_url")
 
-    # 2. 直接URLがない場合、formatsリストから再生可能なものを探す
-    if not stream_url and "formats" in info:
-        # 音声が含まれており(acodec != none)、かつURLがあるものをフィルタリング
-        formats = [f for f in info["formats"] if f.get("url") and f.get("acodec") != "none"]
-        if formats:
-            stream_url = formats[-1]["url"]
+    # 2. requested_formats がある = 映像+音声が分離されている
+    #    → ブラウザは MSE が必要。HLS manifest があればそちらを使う
+    if not stream_url and info.get("requested_formats"):
+        # HLS/DASH manifest があれば優先（ブラウザで直接再生できる）
+        stream_url = info.get("manifest_url")
+
+        # なければ音声付きフォーマットを探す
+        if not stream_url:
+            for f in reversed(info.get("formats", [])):
+                if f.get("url") and f.get("acodec") != "none":
+                    stream_url = f["url"]
+                    break
+
+    # 3. フォールバック: formats の末尾（最高品質）
+    if not stream_url:
+        for f in reversed(info.get("formats", [])):
+            if f.get("url"):
+                stream_url = f["url"]
+                break
 
     if not stream_url:
         raise ValueError("再生可能なURLが見つかりませんでした")
@@ -62,10 +82,8 @@ def _extract(video_id: str) -> dict:
 
 @app.get("/stream")
 async def stream(id: str = Query(..., description="YouTube video ID")):
-    """動画の直接ストリームURLを返す"""
     if not id or len(id) > 20:
         raise HTTPException(status_code=400, detail="無効な動画IDです")
-
     try:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _extract, id)
