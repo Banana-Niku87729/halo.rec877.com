@@ -1,16 +1,13 @@
 """
-Halo - yt-dlp Backend
+Halo - pytubefix Backend
 """
 
 import asyncio
-from copy import deepcopy
-from typing import Any
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-import yt_dlp
+from pytubefix import YouTube
 
-app = FastAPI(title="Halo yt-dlp Backend")
+app = FastAPI(title="Halo pytubefix Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,114 +16,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_YDL_OPTS: dict[str, Any] = {
-    "quiet": True,
-    "no_warnings": True,
-    "noplaylist": True,
-    "skip_download": True,
-    "cookiefile": "cookies.txt",
-    "http_headers": {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-    },
-}
-
-# Start with yt-dlp's default selection, then progressively relax it when a
-# video does not expose the exact stream combination we first asked for.
-STREAM_FORMAT_FALLBACKS: tuple[str | None, ...] = (
-    None,
-    "best/bestvideo+bestaudio",
-    "best",
-)
-
-
-def _build_ydl_opts(format_selector: str | None = None) -> dict[str, Any]:
-    opts = deepcopy(BASE_YDL_OPTS)
-    if format_selector:
-        opts["format"] = format_selector
-    return opts
-
-
 def _watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
+def _extract(video_id: str) -> dict:
+    try:
+        # client='WEB' の他に 'ANDROID' や 'TV' などが指定可能です。
+        # ブロックされやすい場合はクライアントを変更すると通ることがあります。
+        yt = YouTube(_watch_url(video_id), client='WEB')
+        
+        # 映像と音声が含まれているプログレッシブストリームの中で最高画質を取得 (通常720p)
+        stream = yt.streams.get_highest_resolution()
+        
+        if not stream:
+            # 見つからない場合は何らかのストリームをフォールバックとして取得
+            stream = yt.streams.first()
 
-def _fetch_video_info(video_id: str, format_selector: str | None = None) -> dict[str, Any]:
-    with yt_dlp.YoutubeDL(_build_ydl_opts(format_selector)) as ydl:
-        return ydl.extract_info(_watch_url(video_id), download=False)
+        if not stream:
+            raise ValueError("再生可能なストリームが見つかりませんでした")
 
-
-def _extract_info_with_fallbacks(video_id: str) -> dict[str, Any]:
-    last_error: Exception | None = None
-
-    for format_selector in STREAM_FORMAT_FALLBACKS:
-        try:
-            return _fetch_video_info(video_id, format_selector)
-        except yt_dlp.utils.DownloadError as error:
-            last_error = error
-            if "Requested format is not available" not in str(error):
-                raise
-
-    if last_error:
-        raise last_error
-
-    raise RuntimeError("yt-dlp did not return stream information")
-
-
-def _entry_url(entry: dict[str, Any] | None) -> str | None:
-    if not entry:
-        return None
-    return entry.get("url") or entry.get("manifest_url")
-
-
-def _has_audio(entry: dict[str, Any]) -> bool:
-    return entry.get("acodec") not in (None, "none")
-
-
-def _has_video(entry: dict[str, Any]) -> bool:
-    return entry.get("vcodec") not in (None, "none")
-
-
-def _pick_stream_entry(info: dict[str, Any]) -> dict[str, Any] | None:
-    if _entry_url(info):
-        return info
-
-    formats = info.get("formats") or []
-    selectors = (
-        lambda fmt: _entry_url(fmt) and _has_video(fmt) and _has_audio(fmt),
-        lambda fmt: fmt.get("manifest_url"),
-        lambda fmt: _entry_url(fmt) and _has_audio(fmt),
-        lambda fmt: _entry_url(fmt),
-    )
-
-    for matches in selectors:
-        for fmt in reversed(formats):
-            if matches(fmt):
-                return fmt
-
-    return None
-
-
-def _extract(video_id: str) -> dict[str, Any]:
-    info = _extract_info_with_fallbacks(video_id)
-    stream_entry = _pick_stream_entry(info)
-    stream_url = _entry_url(stream_entry)
-
-    if not stream_url:
-        raise ValueError("再生可能なURLが見つかりませんでした")
-
-    return {
-        "url": stream_url,
-        "title": info.get("title", ""),
-        "duration": info.get("duration"),
-        "ext": (stream_entry or {}).get("ext") or info.get("ext", "mp4"),
-    }
-
+        return {
+            "url": stream.url,
+            "title": yt.title,
+            "duration": yt.length,
+            "ext": stream.subtype,
+        }
+    except Exception as e:
+        raise ValueError(f"動画の取得に失敗しました: {e}")
 
 @app.get("/stream")
 async def stream(id: str = Query(..., description="YouTube video ID")):
@@ -135,21 +51,17 @@ async def stream(id: str = Query(..., description="YouTube video ID")):
 
     try:
         loop = asyncio.get_running_loop()
+        # pytubefixの通信処理は同期的なので、イベントループをブロックしないよう別スレッドで実行
         result = await loop.run_in_executor(None, _extract, id)
         return result
-    except yt_dlp.utils.DownloadError as error:
-        raise HTTPException(
-            status_code=404,
-            detail=f"動画を取得できませんでした: {error}",
-        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error))
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
-
+        raise HTTPException(status_code=500, detail=str(error))
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
 
 @app.get("/formats")
 async def formats(id: str):
@@ -157,23 +69,23 @@ async def formats(id: str):
         raise HTTPException(status_code=400, detail="無効な動画IDです")
 
     try:
+        def _get_formats():
+            yt = YouTube(_watch_url(id), client='WEB')
+            formats_list = [
+                {
+                    "format_id": str(stream.itag),
+                    "ext": stream.subtype,
+                    "vcodec": stream.video_codec,
+                    "acodec": stream.audio_codec,
+                    "height": getattr(stream, 'resolution', None),
+                    "has_url": bool(stream.url),
+                }
+                for stream in yt.streams
+            ]
+            return {"title": yt.title, "formats": formats_list}
+            
         loop = asyncio.get_running_loop()
-        info = await loop.run_in_executor(None, _fetch_video_info, id, None)
-    except yt_dlp.utils.DownloadError as error:
-        raise HTTPException(
-            status_code=404,
-            detail=f"動画フォーマットを取得できませんでした: {error}",
-        ) from error
-
-    formats = [
-        {
-            "format_id": fmt.get("format_id"),
-            "ext": fmt.get("ext"),
-            "vcodec": fmt.get("vcodec"),
-            "acodec": fmt.get("acodec"),
-            "height": fmt.get("height"),
-            "has_url": bool(_entry_url(fmt)),
-        }
-        for fmt in info.get("formats", [])
-    ]
-    return {"title": info.get("title"), "formats": formats}
+        result = await loop.run_in_executor(None, _get_formats)
+        return result
+    except Exception as error:
+        raise HTTPException(status_code=404, detail=str(error))
