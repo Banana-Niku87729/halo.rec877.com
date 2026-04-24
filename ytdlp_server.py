@@ -21,12 +21,13 @@ def _extract(video_id: str) -> dict:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        # 修正：より柔軟なフォーマット選択に変更
-        # mp4を優先しつつ、だめなら何でもいいから「映像+音声」が揃っているものを探す
-        "format": "best[ext=mp4]/best", 
+        # 18=360p合体mp4を最優先、次点で音声付き最良、最後はany
+        "format": "18/best[acodec!=none][vcodec!=none]/best",
         "noplaylist": True,
         "skip_download": True,
         "cookiefile": "cookies.txt",
+        # JSランタイムのパスを明示（node.jsインストール後）
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
