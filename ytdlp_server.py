@@ -51,24 +51,27 @@ def _extract(video_id: str) -> dict:
     url = f"https://www.youtube.com/watch?v={video_id}"
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    # ストリームURLの取得ロジック
-    stream_url = info.get("url")
-    if not stream_url and "formats" in info:
-        # urlが直接ない場合、formatsの中から一番条件に近いものを探す
-        stream_url = info["formats"][-1]["url"]
-
-    if not stream_url:
-        raise ValueError("再生可能なURLが見つかりませんでした")
-
-    return {
-        "url": stream_url,
-        "title": info.get("title", ""),
-        "duration": info.get("duration"),
-        "ext": info.get("ext", "mp4"),
-    }
-
+            info = ydl.extract_info(url, download=False)
+    
+        # 1. 結合済みのURL（manifest_url など）を優先
+        stream_url = info.get("url") or info.get("manifest_url")
+    
+        # 2. 直接URLがない場合、formatsリストを上から探す
+        if not stream_url and "formats" in info:
+            # 再生可能な mp4 もしくは一番いいやつを抽出
+            formats = [f for f in info["formats"] if f.get("url") and f.get("acodec") != "none"]
+            if formats:
+                stream_url = formats[-1]["url"] # リストの最後（通常は最高画質）を取得
+    
+        if not stream_url:
+            raise ValueError("再生可能なURLが見つかりませんでした")
+    
+        return {
+            "url": stream_url,
+            "title": info.get("title", ""),
+            "duration": info.get("duration"),
+            "ext": info.get("ext", "mp4"),
+        }
 
 @app.get("/stream")
 async def stream(id: str = Query(..., description="YouTube video ID")):
