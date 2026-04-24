@@ -137,7 +137,7 @@ def _extract(video_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/stream")
+@app.get("/api/stream")
 async def stream(id: str = Query(..., description="YouTube video ID")):
     if not id or len(id) > 20:
         raise HTTPException(status_code=400, detail="無効な動画IDです")
@@ -160,7 +160,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/formats")
+@app.get("/api/formats")
 async def formats(id: str):
     if not id or len(id) > 20:
         raise HTTPException(status_code=400, detail="無効な動画IDです")
